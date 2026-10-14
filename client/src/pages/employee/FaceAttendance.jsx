@@ -23,6 +23,8 @@ export default function FaceAttendance() {
   const [gating, setGating] = useState(false);
   const [gateError, setGateError] = useState(null);
   const [capturedLocation, setCapturedLocation] = useState(null);
+  const [selfBusy, setSelfBusy] = useState(false);
+  const [selfNotice, setSelfNotice] = useState(null);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -47,8 +49,43 @@ export default function FaceAttendance() {
     setMode(next);
     setDupHint(null);
     setGateError(null);
+    setSelfNotice(null);
     setCapturedLocation(null);
     setForceStart((n) => n + 1);
+  };
+
+  // Used when the administrator has disabled face attendance: record the
+  // attendance through the configured alternative (self-service) method. The
+  // geofence is still enforced server-side when geo verification is enabled.
+  const doSelfService = async () => {
+    setGateError(null);
+    setSelfNotice(null);
+    setSelfBusy(true);
+    try {
+      const s = settings || (await fetchAttendanceSettings());
+      let location = null;
+      if (s.geoEnabled !== false) {
+        const geo = await resolveGeoGate(s);
+        if (!geo.ok) {
+          setGateError(geo);
+          return;
+        }
+        location = geo.location;
+      }
+      const fd = new FormData();
+      if (location) fd.append('location', JSON.stringify({ latitude: location.latitude, longitude: location.longitude }));
+      const endpoint = mode === 'checkin' ? 'check-in' : 'check-out';
+      const { data } = await api.post(`/attendance/${endpoint}`, fd);
+      setRecord(data.data || null);
+      setSelfNotice(data.message || 'Attendance recorded.');
+      if (today.refetch) await today.refetch();
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      const message = err?.response?.data?.message || extractError(err, 'Could not record your attendance. Please try again.');
+      setGateError({ code, message });
+    } finally {
+      setSelfBusy(false);
+    }
   };
 
   const submit = async ({ blob, descriptor }) => {
@@ -148,15 +185,62 @@ export default function FaceAttendance() {
         </div>
       </Card>
 
-      {faceDisabled === true && (
+      {faceDisabled === true && !canDo && (
         <div className="card mx-auto max-w-lg">
           <div className="flex flex-col items-center gap-3 p-8 text-center">
-            <ShieldAlert className="h-10 w-10 text-amber-500" />
-            <h3 className="font-bold text-slate-900 dark:text-slate-100">Face attendance is unavailable</h3>
+            <CalendarCheck2 className="h-10 w-10 text-emerald-500" />
+            <h3 className="font-bold text-slate-900 dark:text-slate-100">
+              {mode === 'checkin' ? 'Already checked in today' : 'No active check-in to end'}
+            </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Face attendance is currently disabled by your administrator. The camera will not open until it is enabled.
+              {mode === 'checkin' ? 'Self-service check-in is done for today. You can check out instead.' : 'Check in first, then come back to check out.'}
             </p>
-            <Button variant="ghost" onClick={() => navigate('/employee')}>Back to Dashboard</Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => switchMode(otherMode)}>{otherLabel}</Button>
+              <Button variant="ghost" onClick={() => navigate('/employee')}>Back to Dashboard</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {faceDisabled === true && canDo && (
+        <div className="card mx-auto max-w-lg">
+          <div className="flex flex-col items-center gap-4 p-8 text-center">
+            <ShieldAlert className="h-10 w-10 text-amber-500" />
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-slate-100">Face verification is disabled</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Your administrator has turned off face attendance. You can still record attendance using self-service
+                attendance{settings?.geoEnabled !== false ? '; your location will be verified against the company geofence.' : '.'}
+                {' '}This record will be marked as <span className="font-semibold">Self Service</span>, not face-verified.
+              </p>
+            </div>
+
+            {selfNotice && (
+              <div className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400">
+                {selfNotice}
+              </div>
+            )}
+
+            {gateError && (
+              <div
+                className={`w-full rounded-xl border px-4 py-3 text-sm ${
+                  gateError.code === 'OUTSIDE_ALLOWED_AREA'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400'
+                    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400'
+                }`}
+              >
+                {gateError.message}
+              </div>
+            )}
+
+            <div className="flex flex-col items-center gap-2">
+              <Button onClick={doSelfService} loading={selfBusy} disabled={selfBusy}>
+                {mode === 'checkin' ? <LogIn className="h-4 w-4" /> : <LogOut className="h-4 w-4" />}
+                {mode === 'checkin' ? 'Check In (Self Service)' : 'Check Out (Self Service)'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/employee')}>Back to Dashboard</Button>
+            </div>
           </div>
         </div>
       )}

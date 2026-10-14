@@ -24,17 +24,30 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendMail({ to, subject, html, text }) {
+async function sendMail({ to, cc, replyTo, subject, html, text, attachments }) {
   const client = getTransporter();
   if (!client) return { sent: false, reason: 'smtp-not-configured' };
   const from = config.smtp.from || config.smtp.user;
   try {
-    await client.sendMail({ from, to, subject, html, text });
-    return { sent: true };
+    const info = await client.sendMail({ from, to, cc, replyTo, subject, html, text, attachments });
+    return { sent: true, messageId: info?.messageId || '' };
   } catch (err) {
     console.error('[mail] Failed to send email:', err.message);
     return { sent: false, reason: err.message };
   }
+}
+
+/** Simple generic document email with optional PDF attachment. */
+async function sendDocumentMail({ to, cc, replyTo, fromName, subject, body, attachments }) {
+  const company = config.companyName || 'HR';
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;color:#0f172a;">
+      <p style="color:#334155;font-size:14px;line-height:1.7;white-space:pre-wrap;">${esc(body || '')}</p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;" />
+      <p style="margin:0;color:#94a3b8;font-size:12px;">${esc(fromName || company)} · This is an automated message — please do not reply.</p>
+    </div>
+  `;
+  return sendMail({ to, cc, replyTo, subject, html, text: body || '', attachments });
 }
 
 // Welcome / credentials email sent to a newly created employee's work email.
@@ -102,4 +115,4 @@ function esc(v) {
     .replace(/"/g, '&quot;');
 }
 
-module.exports = { sendMail, sendWelcomeMail, sendLoginDetailsMail };
+module.exports = { sendMail, sendDocumentMail, sendWelcomeMail, sendLoginDetailsMail };

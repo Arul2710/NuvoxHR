@@ -132,15 +132,10 @@ const checkIn = asyncHandler(async (req, res) => {
   }
 
   const settings = await getAttendanceSettings();
-  if (settings.faceEnabled === false) {
-    return res.status(403).json({
-      success: false,
-      message: 'Face attendance is currently disabled by your administrator.',
-      code: 'FACE_DISABLED',
-    });
-  }
+  const faceRequired = settings.faceEnabled !== false;
+  const geoRequired = settings.geoEnabled !== false;
 
-  if (!req.file || !req.file.buffer) {
+  if (faceRequired && (!req.file || !req.file.buffer)) {
     return res.status(400).json({ success: false, message: 'A face photo is required to check in' });
   }
 
@@ -177,20 +172,29 @@ const checkIn = asyncHandler(async (req, res) => {
     });
   }
 
-  const verification = await verifyAgainstProfile({
-    employeeId: req.user.employee,
-    buffer: req.file.buffer,
-    clientDescriptor: parseDescriptor(req.body.descriptor),
-  });
+  let verification = { ok: true, distance: null, message: '' };
+  if (faceRequired) {
+    verification = await verifyAgainstProfile({
+      employeeId: req.user.employee,
+      buffer: req.file.buffer,
+      clientDescriptor: parseDescriptor(req.body.descriptor),
+    });
 
-  if (!verification.ok) {
-    return res.status(400).json({ success: false, message: verification.message, code: verification.code, data: verification });
+    if (!verification.ok) {
+      return res.status(400).json({ success: false, message: verification.message, code: verification.code, data: verification });
+    }
   }
 
   const now = new Date();
-  const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg';
-  const checkInPhoto = saveBuffer(req.file.buffer, ext);
+  let checkInPhoto = null;
+  if (req.file && req.file.buffer) {
+    const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    checkInPhoto = saveBuffer(req.file.buffer, ext);
+  }
   const checkInDistanceFromCompany = geofence.distance;
+  const faceVerified = faceRequired && verification.ok;
+  const geoVerified = geoRequired;
+  const method = faceRequired ? 'Face' : 'Self Service';
 
   const { status, lateMinutes } = await evaluateCheckInStatus(today, now);
 
@@ -206,8 +210,21 @@ const checkIn = asyncHandler(async (req, res) => {
       checkInPhoto,
       checkInLocation,
       checkInDistanceFromCompany,
-      checkInMatchDistance: verification.distance,
-      faceVerified: true,
+      checkInMatchDistance: faceRequired ? verification.distance : undefined,
+      faceVerified,
+      geoVerified,
+      source: method,
+      verification: {
+        faceVerified,
+        faceDistance: faceRequired ? (verification.distance ?? null) : null,
+        faceAt: faceVerified ? now : null,
+        geoRequired,
+        geoVerified,
+        geoDistance: geofence.distance ?? null,
+        geoAllowedRadius: geofence.allowed ?? null,
+        method,
+        verifiedAt: now,
+      },
       deviceInfo: summarizeDevice(req),
     });
 
@@ -234,15 +251,10 @@ const checkOut = asyncHandler(async (req, res) => {
   if (!employee) return res.status(403).json({ success: false, message: 'Only employees can check out' });
 
   const settings = await getAttendanceSettings();
-  if (settings.faceEnabled === false) {
-    return res.status(403).json({
-      success: false,
-      message: 'Face attendance is currently disabled by your administrator.',
-      code: 'FACE_DISABLED',
-    });
-  }
+  const faceRequired = settings.faceEnabled !== false;
+  const geoRequired = settings.geoEnabled !== false;
 
-  if (!req.file || !req.file.buffer) {
+  if (faceRequired && (!req.file || !req.file.buffer)) {
     return res.status(400).json({ success: false, message: 'A face photo is required to check out' });
   }
 
@@ -274,19 +286,25 @@ const checkOut = asyncHandler(async (req, res) => {
     });
   }
 
-  const verification = await verifyAgainstProfile({
-    employeeId: req.user.employee,
-    buffer: req.file.buffer,
-    clientDescriptor: parseDescriptor(req.body.descriptor),
-  });
+  let verification = { ok: true, distance: null, message: '' };
+  if (faceRequired) {
+    verification = await verifyAgainstProfile({
+      employeeId: req.user.employee,
+      buffer: req.file.buffer,
+      clientDescriptor: parseDescriptor(req.body.descriptor),
+    });
 
-  if (!verification.ok) {
-    return res.status(400).json({ success: false, message: verification.message, code: verification.code, data: verification });
+    if (!verification.ok) {
+      return res.status(400).json({ success: false, message: verification.message, code: verification.code, data: verification });
+    }
   }
 
   const now = new Date();
-  const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg';
-  const checkOutPhoto = saveBuffer(req.file.buffer, ext);
+  let checkOutPhoto = null;
+  if (req.file && req.file.buffer) {
+    const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    checkOutPhoto = saveBuffer(req.file.buffer, ext);
+  }
 
   const workingHoursMinutes = Math.max(0, Math.round((now - record.checkInTime) / 60000));
   const status = await computeFinalStatus(record.checkInTime, now, record.status);
@@ -295,9 +313,23 @@ const checkOut = asyncHandler(async (req, res) => {
   record.checkOutPhoto = checkOutPhoto;
   record.checkOutLocation = checkOutLocation;
   record.checkOutDistanceFromCompany = geofence.distance;
-  record.checkOutMatchDistance = verification.distance;
+  record.checkOutMatchDistance = faceRequired ? verification.distance : undefined;
   record.workingHoursMinutes = workingHoursMinutes;
   record.status = status;
+  record.geoVerified = geoRequired || record.geoVerified;
+  if (faceRequired) record.faceVerified = record.faceVerified && verification.ok;
+  record.verification = {
+    ...(record.verification ? record.verification.toObject?.() || record.verification : {}),
+    faceVerified: faceRequired ? verification.ok : Boolean(record.faceVerified),
+    faceDistance: faceRequired ? (verification.distance ?? null) : (record.verification?.faceDistance ?? null),
+    geoRequired,
+    geoVerified: geoRequired,
+    geoDistance: geofence.distance ?? null,
+    geoAllowedRadius: geofence.allowed ?? null,
+    method: faceRequired ? (record.verification?.method || 'Face') : 'Self Service',
+    verifiedAt: now,
+  };
+  if (!faceRequired && !record.source) record.source = 'Self Service';
   await record.save();
 
   res.json({
@@ -311,17 +343,25 @@ const checkOut = asyncHandler(async (req, res) => {
 // @route  GET /api/attendance  (admin records list, with filters + pagination)
 const getRecords = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 100);
-  const { date, status, department, search } = req.query;
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 200);
+  const { date, from, to, status, department, search, employee } = req.query;
 
   const filter = {};
   if (date) {
     filter.date = { $gte: startOfDay(new Date(date)), $lt: endOfDay(new Date(date)) };
+  } else if (from || to) {
+    const range = {};
+    if (from) range.$gte = startOfDay(new Date(from));
+    if (to) range.$lt = endOfDay(new Date(to));
+    filter.date = range;
   }
   if (status && !['Absent', 'On Leave'].includes(status)) filter.status = status;
 
   const employeeFilter = {};
   if (department) employeeFilter.department = department;
+  if (employee && /^[0-9a-fA-F]{24}$/.test(String(employee))) {
+    filter.employee = employee;
+  }
   if (search) {
     const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     employeeFilter.$or = [{ firstName: re }, { lastName: re }, { employeeId: re }, { email: re }];
@@ -628,4 +668,206 @@ const adminCheckOut = asyncHandler(async (req, res) => {
   return respondAttendance(res, result);
 });
 
-module.exports = { checkIn, checkOut, getRecords, getToday, getMonthly, computeDayStatus, adminCheckIn, adminCheckOut };
+/* ------------------------------------------------------------------
+ * Admin manual attendance marking & correction.
+ * These never claim face or GPS verification — source is always Manual.
+ * ------------------------------------------------------------------ */
+
+const MANUAL_STATUSES = ['Present', 'Absent', 'Late', 'Half Day', 'On Leave', 'Holiday', 'Weekly Off', 'Pending Review'];
+
+function parseManualTime(value, fallbackDate) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) return d;
+  const [h, m] = String(value).split(':').map((p) => parseInt(p, 10));
+  if (Number.isNaN(h)) return null;
+  const base = fallbackDate instanceof Date ? new Date(fallbackDate) : new Date();
+  base.setHours(h || 0, m || 0, 0, 0);
+  return base;
+}
+
+// Human-readable time (e.g. "06:30 PM") for messages shown to admins.
+function formatTime(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function manualAudit(field, oldValue, newValue, reason, req) {
+  return {
+    field,
+    oldValue: oldValue === undefined ? null : oldValue,
+    newValue: newValue === undefined ? null : newValue,
+    reason: String(reason || '').trim(),
+    by: req.user.id,
+    byName: req.user.name || '',
+    at: new Date(),
+  };
+}
+
+// @route  GET /api/attendance/record/:id  (admin + owner)
+const getAttendanceDetail = asyncHandler(async (req, res) => {
+  const record = await Attendance.findById(req.params.id)
+    .populate({ path: 'employee', select: 'firstName lastName employeeId email department designation', populate: 'department designation' })
+    .populate('markedBy', 'name')
+    .lean();
+  if (!record) return res.status(404).json({ success: false, message: 'Attendance record not found' });
+  if (req.user.role === 'employee' && String(req.user.employee) !== String(record.employee?._id)) {
+    return res.status(403).json({ success: false, message: 'You can only view your own attendance' });
+  }
+  res.json({ success: true, data: record });
+});
+
+// @route  POST /api/attendance/mark  (admin only — manual entry)
+const manualMarkAttendance = asyncHandler(async (req, res) => {
+  const { employeeId, date, action, status, reason, remarks } = req.body;
+  if (!employeeId) return res.status(400).json({ success: false, message: 'Employee is required' });
+  if (!date) return res.status(400).json({ success: false, message: 'Attendance date is required' });
+  if (!['check-in', 'check-out'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'Attendance action must be Check-In or Check-Out' });
+  }
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'A reason is required for manual attendance' });
+  }
+
+  const empDoc = await Employee.findById(employeeId);
+  if (!empDoc) return res.status(404).json({ success: false, message: 'Employee not found' });
+  if (empDoc.status !== 'Active') {
+    return res.status(403).json({ success: false, message: 'This employee account is inactive' });
+  }
+
+  const attendanceDate = startOfDay(new Date(date));
+  if (Number.isNaN(attendanceDate.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid attendance date' });
+  }
+
+  let time = parseManualTime(req.body.time, attendanceDate);
+  if (!time) return res.status(400).json({ success: false, message: 'A valid time is required' });
+
+  const chosenStatus = MANUAL_STATUSES.includes(status) ? status : undefined;
+  const existing = await Attendance.findOne({ employee: empDoc._id, date: attendanceDate });
+  const now = new Date();
+
+  if (action === 'check-in') {
+    if (existing && existing.checkInTime) {
+      return res.status(409).json({
+        success: false,
+        message: `This employee already has a check-in at ${formatTime(existing.checkInTime)} on ${toDateKey(attendanceDate)}. Use correction to modify it.`,
+        code: 'ALREADY_CHECKED_IN',
+        data: existing,
+      });
+    }
+    const record = existing || await Attendance.create({
+      employee: empDoc._id,
+      employeeId: empDoc.employeeId,
+      date: attendanceDate,
+      dayName: getDayName(attendanceDate),
+    });
+    const previous = record.checkInTime;
+    const evaluated = await evaluateCheckInStatus(attendanceDate, time);
+    record.checkInTime = time;
+    record.checkOutTime = null;
+    record.status = chosenStatus || evaluated.status;
+    record.lateMinutes = chosenStatus === 'Late' ? evaluated.lateMinutes : 0;
+    record.source = 'Manual';
+    record.faceVerified = false;
+    record.geoVerified = false;
+    record.manualReason = String(reason).trim();
+    record.manualRemarks = String(remarks || '').trim();
+    record.markedBy = req.user.id;
+    record.markedByName = req.user.name || '';
+    record.deviceInfo = summarizeDevice(req);
+    record.audit.push(manualAudit('check-in', previous, time, reason, req));
+    await record.save();
+    return res.status(201).json({ success: true, message: 'Manual check-in recorded', data: record });
+  }
+
+  // check-out
+  if (!existing || !existing.checkInTime) {
+    return res.status(400).json({ success: false, message: 'This employee has not checked in on this date', code: 'NOT_CHECKED_IN' });
+  }
+  if (existing.checkOutTime) {
+    return res.status(409).json({
+      success: false,
+      message: `This employee already checked out at ${formatTime(existing.checkOutTime)} on ${toDateKey(attendanceDate)}. Use correction to modify it.`,
+      code: 'ALREADY_CHECKED_OUT',
+      data: existing,
+    });
+  }
+  if (time <= existing.checkInTime) {
+    return res.status(400).json({ success: false, message: 'Check-out time cannot be before the check-in time', code: 'INVALID_SEQUENCE' });
+  }
+  const previous = existing.checkOutTime;
+  existing.checkOutTime = time;
+  existing.workingHoursMinutes = Math.max(0, Math.round((time - existing.checkInTime) / 60000));
+  if (chosenStatus) {
+    existing.status = chosenStatus;
+  } else {
+    existing.status = await computeFinalStatus(existing.checkInTime, time, existing.status);
+  }
+  existing.source = 'Manual';
+  existing.faceVerified = false;
+  existing.geoVerified = false;
+  existing.manualReason = String(reason).trim();
+  existing.manualRemarks = String(remarks || '').trim();
+  existing.markedBy = req.user.id;
+  existing.markedByName = req.user.name || '';
+  existing.audit.push(manualAudit('check-out', previous, time, reason, req));
+  await existing.save();
+  return res.json({ success: true, message: 'Manual check-out recorded', data: existing });
+});
+
+// @route  PUT /api/attendance/:id/correct  (admin only — correction with audit)
+const correctAttendance = asyncHandler(async (req, res) => {
+  const { checkInTime, checkOutTime, status, reason, remarks } = req.body;
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'A reason is required to correct an attendance record' });
+  }
+  const record = await Attendance.findById(req.params.id);
+  if (!record) return res.status(404).json({ success: false, message: 'Attendance record not found' });
+
+  const audits = [];
+  if (checkInTime !== undefined && checkInTime !== null && checkInTime !== '') {
+    const t = parseManualTime(checkInTime, record.date);
+    if (!t) return res.status(400).json({ success: false, message: 'Invalid check-in time' });
+    audits.push(manualAudit('check-in', record.checkInTime, t, reason, req));
+    record.checkInTime = t;
+  }
+  if (checkOutTime !== undefined && checkOutTime !== null && checkOutTime !== '') {
+    const t = parseManualTime(checkOutTime, record.date);
+    if (!t) return res.status(400).json({ success: false, message: 'Invalid check-out time' });
+    if (record.checkInTime && t <= record.checkInTime) {
+      return res.status(400).json({ success: false, message: 'Check-out time cannot be before the check-in time', code: 'INVALID_SEQUENCE' });
+    }
+    audits.push(manualAudit('check-out', record.checkOutTime, t, reason, req));
+    record.checkOutTime = t;
+  }
+
+  if (status && MANUAL_STATUSES.includes(status)) {
+    audits.push(manualAudit('status', record.status, status, reason, req));
+    record.status = status;
+  }
+  if (remarks !== undefined) {
+    record.manualRemarks = String(remarks).trim();
+  }
+
+  if (record.checkInTime && record.checkOutTime) {
+    record.workingHoursMinutes = Math.max(0, Math.round((record.checkOutTime - record.checkInTime) / 60000));
+  }
+  record.source = 'Manual';
+  record.faceVerified = false;
+  record.geoVerified = false;
+  record.manualReason = String(reason).trim();
+  record.markedBy = req.user.id;
+  record.markedByName = req.user.name || '';
+  record.audit.push(...audits);
+  await record.save();
+
+  const populated = await Attendance.findById(record._id)
+    .populate({ path: 'employee', select: 'firstName lastName employeeId department designation', populate: 'department designation' })
+    .lean();
+  res.json({ success: true, message: 'Attendance record corrected. Change recorded in audit history.', data: populated });
+});
+
+module.exports = { checkIn, checkOut, getRecords, getToday, getMonthly, computeDayStatus, adminCheckIn, adminCheckOut, getAttendanceDetail, manualMarkAttendance, correctAttendance };

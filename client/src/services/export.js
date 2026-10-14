@@ -55,63 +55,81 @@ export function exportPDF(filename, title, columns, rows) {
   doc.save(filename);
 }
 
-/** Convenience builders for the two main report shapes. */
-export function buildAttendanceExportPayload(summary, rows) {
-  const columns = [
-    { key: 'employeeId', label: 'Employee ID' },
-    { key: 'employeeName', label: 'Employee' },
-    { key: 'department', label: 'Department' },
-    { key: 'date', label: 'Date' },
-    { key: 'checkInTime', label: 'Check In', render: (r) => (r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—') },
-    { key: 'checkOutTime', label: 'Check Out', render: (r) => (r.checkOutTime ? new Date(r.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—') },
-    {
-      key: 'workingHoursMinutes',
-      label: 'Working Hours',
-      render: (r) => {
-        if (!r.workingHoursMinutes) return '—';
-        const h = Math.floor(r.workingHoursMinutes / 60);
-        const m = r.workingHoursMinutes % 60;
-        return `${h}h ${String(m).padStart(2, '0')}m`;
-      },
-    },
-    { key: 'status', label: 'Status' },
-  ];
+// --- Attendance export helpers -------------------------------------------
+// These accept rows from two sources:
+//  * Attendance.jsx  -> already-formatted display strings (checkIn, hours, location, face …)
+//  * Reports.jsx     -> raw values (Date objects / minute counts) from the report API
+// Each renderer therefore accepts either shape.
+
+const timeCell = (value) => {
+  if (!value) return '—';
+  if (typeof value === 'string') return value; // already formatted by the caller
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const dateCell = (value) => {
+  if (!value) return '—';
+  if (typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}/.test(value)) return value; // already formatted
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+};
+
+const durationCell = (flatValue, minutes) => {
+  if (typeof flatValue === 'string' && flatValue) return flatValue;
+  const m = Number(minutes);
+  if (!m) return '—';
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+};
+
+const locationCell = (r) => {
+  if (typeof r.location === 'string') return r.location;
+  if (typeof r.geoVerified === 'boolean') return r.geoVerified ? 'Verified' : 'Not Verified';
+  return '—';
+};
+
+const faceCell = (r) => {
+  if (typeof r.face === 'string') return r.face;
+  if (typeof r.faceVerified === 'boolean') {
+    return r.faceVerified ? 'Verified' : (r.source === 'Manual' ? 'Manual' : 'Not Verified');
+  }
+  return r.source === 'Manual' ? 'Manual' : '—';
+};
+
+const ATTENDANCE_COLUMNS = [
+  { key: 'employeeId', label: 'Employee ID', render: (r) => r.employeeId || r.employee?.employeeId || '—' },
+  { key: 'employeeName', label: 'Employee Name', render: (r) => r.employeeName || (r.employee ? `${r.employee.firstName} ${r.employee.lastName || ''}`.trim() : '—') },
+  { key: 'department', label: 'Department', render: (r) => r.department || r.employee?.department?.name || '—' },
+  { key: 'date', label: 'Attendance Date', render: (r) => dateCell(r.date) },
+  { key: 'checkIn', label: 'Check-In Time', render: (r) => timeCell(r.checkIn || r.checkInTime) },
+  { key: 'checkOut', label: 'Check-Out Time', render: (r) => timeCell(r.checkOut || r.checkOutTime) },
+  { key: 'hours', label: 'Total Working Hours', render: (r) => durationCell(r.hours, r.workingHoursMinutes) },
+  { key: 'breakDuration', label: 'Break Duration', render: (r) => durationCell(r.breakDuration, r.breakMinutes) },
+  { key: 'overtime', label: 'Overtime Hours', render: (r) => durationCell(r.overtime, r.overtimeMinutes) },
+  { key: 'status', label: 'Attendance Status', render: (r) => r.status || '—' },
+  { key: 'location', label: 'Location Verification', render: (r) => locationCell(r) },
+  { key: 'face', label: 'Face Verification', render: (r) => faceCell(r) },
+];
+
+/** Build the shared attendance export payload (columns + title + file base). */
+export function buildAttendanceExportPayload(summary = {}, rows = []) {
+  const from = summary?.range?.from ?? 'All';
+  const to = summary?.range?.to ?? 'All';
   return {
-    columns,
-    title: `Attendance Report · ${summary.range.from} to ${summary.range.to}`,
-    fileBase: `facehr-attendance-${summary.range.from}-${summary.range.to}`,
+    columns: ATTENDANCE_COLUMNS,
+    title: `Attendance Report · ${from} to ${to}`,
+    fileBase: `facehr-attendance-${from}-${to}`,
     rows,
   };
 }
 
-/**
- * Export a flat attendance rows array (from buildAttendanceExportPayload shape)
- * to CSV using the shared report columns.
- */
+/** Export attendance rows to CSV using the shared report columns. */
 export function exportAttendanceToCsv(rows, fileBase) {
-  const columns = [
-    { key: 'employeeId', label: 'Employee ID' },
-    { key: 'employeeName', label: 'Employee' },
-    { key: 'department', label: 'Department' },
-    { key: 'date', label: 'Date' },
-    { key: 'checkIn', label: 'Check In' },
-    { key: 'checkOut', label: 'Check Out' },
-    { key: 'hours', label: 'Working Hours' },
-    { key: 'status', label: 'Status' },
-  ];
-  exportCSV(`${fileBase}.csv`, columns, rows);
+  exportCSV(`${fileBase}.csv`, ATTENDANCE_COLUMNS, rows);
 }
 
-/**
- * Export a flat attendance rows array to a captioned PDF table.
- */
-export function exportAttendanceToPdf(rows, summary) {
+/** Export attendance rows to a captioned PDF table. */
+export function exportAttendanceToPdf(rows, summary = {}) {
   const { columns, title, fileBase } = buildAttendanceExportPayload(summary, rows);
-  const mapped = rows.map((r) => ({
-    ...r,
-    checkInTime: r.checkIn,
-    checkOutTime: r.checkOut,
-    workingHoursMinutes: null,
-  }));
-  exportPDF(`${fileBase}.pdf`, title, columns, mapped);
+  exportPDF(`${fileBase}.pdf`, title, columns, rows);
 }

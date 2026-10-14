@@ -12,6 +12,10 @@ const {
   seedDefaultDesignations,
   seedAdmin,
   seedSettings,
+  seedDefaultLeavePolicies,
+  seedDefaultWorkShifts,
+  seedDefaultAttendancePolicies,
+  seedDefaultCompanySettings,
 } = require('./config/seed');
 
 const app = express();
@@ -62,6 +66,12 @@ app.use('/api/employees', require('./routes/employeeRoutes'));
 app.use('/api/face', require('./routes/faceRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/leaves', require('./routes/leaveRoutes'));
+app.use('/api/leave-policies', require('./routes/leavePolicyRoutes'));
+app.use('/api/holidays', require('./routes/holidayRoutes'));
+app.use('/api/payroll', require('./routes/payrollRoutes'));
+app.use('/api/company', require('./routes/companyRoutes'));
+app.use('/api/documents', require('./routes/documentRoutes'));
+app.use('/api/emails', require('./routes/emailRoutes'));
 app.use('/api/resignations', require('./routes/resignationRoutes'));
 app.use('/api/departments', require('./routes/departmentRoutes'));
 app.use('/api/locations', require('./routes/locationRoutes'));
@@ -84,6 +94,10 @@ const start = async () => {
     await seedDefaultDesignations();
     await seedAdmin();
     await seedSettings();
+    await seedDefaultLeavePolicies();
+    await seedDefaultWorkShifts();
+    await seedDefaultAttendancePolicies();
+    await seedDefaultCompanySettings();
 
     // Initialize face service in the background (non-blocking, graceful)
     faceService.init().catch((err) => console.warn('[FaceService] init error:', err.message));

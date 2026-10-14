@@ -42,7 +42,7 @@ function download(url, file) {
       console.log(`- ${file} (cached)`);
       continue;
     }
-    try {
+    try {   
       await download(`${BASE_URL}/${file}`, target);
       console.log(`- ${file} OK`);
     } catch (err) {

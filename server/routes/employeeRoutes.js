@@ -17,11 +17,14 @@ const {
   sendEmployeeLoginDetails,
   uploadEmployeePhoto,
 } = require('../controllers/employeeController');
+const { getPayrollConfig, updatePayrollConfig } = require('../controllers/payrollConfigController');
 
 router.use(protect, apiLimiter);
 
 router.get('/', authorize('admin'), getEmployees);
 router.get('/:id/attendance', authorize('admin', 'employee'), getEmployeeAttendance);
+router.get('/:id/payroll', authorize('admin'), getPayrollConfig);
+router.patch('/:id/payroll', authorize('admin'), updatePayrollConfig);
 router.get('/:id', authorize('admin', 'employee'), getEmployee);
 router.post('/', authorize('admin'), uploadProfilePhoto, createEmployee);
 router.put('/:id', authorize('admin'), uploadProfilePhoto, updateEmployee);

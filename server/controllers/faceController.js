@@ -9,6 +9,14 @@ const { verifyAgainstProfile, parseDescriptor } = require('../services/faceVerif
 const { normalizeFaceDescriptor } = require('../controllers/employeeController');
 const { createNotification } = require('../services/notificationService');
 
+// Resolve an employee from either a Mongo ObjectId or a human Employee ID (e.g. NUX003).
+async function resolveEmployee(ref) {
+  const value = String(ref || '').trim();
+  if (!value) return null;
+  if (/^[0-9a-fA-F]{24}$/.test(value)) return Employee.findById(value);
+  return Employee.findOne({ employeeId: value.toUpperCase() });
+}
+
 // @route  POST /api/face/register  (admin + profile photo upload)
 const registerFace = asyncHandler(async (req, res) => {
   const { employeeId, force } = req.body;
@@ -123,7 +131,7 @@ const verifyFace = asyncHandler(async (req, res) => {
 
 // @route  GET /api/face/:employeeId  (admin)
 const getFaceStatus = asyncHandler(async (req, res) => {
-  const employee = await Employee.findById(req.params.employeeId);
+  const employee = await resolveEmployee(req.params.employeeId);
   if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
   const profile = await FaceProfile.findOne({ employee: employee._id }).select('-descriptor');
   res.json({
@@ -140,7 +148,7 @@ const getFaceStatus = asyncHandler(async (req, res) => {
 
 // @route  DELETE /api/face/:employeeId  (admin)
 const deleteFace = asyncHandler(async (req, res) => {
-  const employee = await Employee.findById(req.params.employeeId);
+  const employee = await resolveEmployee(req.params.employeeId);
   if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
 
   const profile = await FaceProfile.findOneAndDelete({ employee: employee._id });

@@ -18,6 +18,12 @@ import {
   LogOut,
   ChevronDown,
   KeyRound,
+  Wallet,
+  FileText,
+  CalendarRange,
+  Mail,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import Avatar from '../components/Avatar';
@@ -29,16 +35,63 @@ import { useToast } from '../context/ToastContext';
 import { useNavigateSearch } from '../utils/navigation';
 import clsx from 'clsx';
 
-const NAV = [
-  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/employees', label: 'Employees', icon: Users },
-  { to: '/admin/attendance', label: 'Attendance', icon: CalendarDays },
-  { to: '/admin/attendance-settings', label: 'Attendance Settings', icon: MapPinned },
-  { to: '/admin/face-registration', label: 'Face Registration', icon: ScanFace },
-  { to: '/admin/departments', label: 'Departments', icon: Building2 },
-  { to: '/admin/leaves', label: 'Leave Management', icon: Plane },
-  { to: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/admin/settings', label: 'Settings', icon: SettingsIcon },
+const NAV_SECTIONS = [
+  {
+    title: 'Dashboard',
+    items: [
+      { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
+    ],
+  },
+  {
+    title: 'Employees',
+    items: [
+      { to: '/admin/employees', label: 'Employee Directory', icon: Users },
+      { to: '/admin/employees/new', label: 'Add Employee', icon: Users },
+      { to: '/admin/documents', label: 'Employee Documents', icon: FileText },
+    ],
+  },
+  {
+    title: 'Attendance',
+    items: [
+      { to: '/admin/attendance', label: 'Attendance Records', icon: CalendarDays },
+      { to: '/admin/attendance/mark', label: 'Mark Attendance', icon: CalendarDays },
+      { to: '/admin/face-registration', label: 'Face Registration', icon: ScanFace },
+      { to: '/admin/attendance-settings', label: 'Attendance Settings', icon: MapPinned },
+    ],
+  },
+  {
+    title: 'Leave Management',
+    items: [
+      { to: '/admin/leaves', label: 'Leave Requests', icon: Plane },
+      { to: '/admin/leave-policies', label: 'Leave Policies', icon: ShieldCheck },
+      { to: '/admin/leave-balances', label: 'Leave Balances', icon: Plane },
+    ],
+  },
+  {
+    title: 'Payroll',
+    items: [
+      { to: '/admin/salary-config', label: 'Salary Configuration', icon: Wallet },
+      { to: '/admin/payroll', label: 'Monthly Payroll', icon: Wallet },
+      { to: '/admin/payroll/slips', label: 'Salary Slips', icon: FileText },
+    ],
+  },
+  {
+    title: 'Company Settings',
+    items: [
+      { to: '/admin/attendance-policies', label: 'Attendance Policies', icon: Clock },
+      { to: '/admin/work-shifts', label: 'Work Shifts', icon: Clock },
+      { to: '/admin/holidays', label: 'Holidays & Weekly Offs', icon: CalendarRange },
+      { to: '/admin/company-details', label: 'Company Details', icon: Building2 },
+      { to: '/admin/email-config', label: 'Email Configuration', icon: Mail },
+    ],
+  },
+  {
+    title: 'Reports',
+    items: [
+      { to: '/admin/reports', label: 'Reports', icon: BarChart3 },
+      { to: '/admin/settings', label: 'Settings', icon: SettingsIcon },
+    ],
+  },
 ];
 
 export default function AdminLayout() {
@@ -71,24 +124,31 @@ export default function AdminLayout() {
         </Link>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {NAV.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={() => setDrawer(false)}
-            className={({ isActive }) =>
-              clsx(
-                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-                isActive
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-              )
-            }
-          >
-            <item.icon className="h-5 w-5 shrink-0" />
-            {item.label}
-          </NavLink>
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title} className="mb-2">
+            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              {section.title}
+            </p>
+            {section.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                onClick={() => setDrawer(false)}
+                className={({ isActive }) =>
+                  clsx(
+                    'group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition',
+                    isActive
+                      ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="border-t p-4 dark:border-slate-700">

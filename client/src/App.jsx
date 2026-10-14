@@ -23,6 +23,18 @@ import Leaves from './pages/admin/Leaves';
 import Reports from './pages/admin/Reports';
 import Settings from './pages/admin/Settings';
 import AttendanceSettings from './pages/admin/AttendanceSettings';
+import SalaryConfig from './pages/admin/SalaryConfig';
+import Payroll from './pages/admin/Payroll';
+import SalarySlips from './pages/admin/SalarySlips';
+import LeavePolicies from './pages/admin/LeavePolicies';
+import LeaveBalances from './pages/admin/LeaveBalances';
+import Holidays from './pages/admin/Holidays';
+import Documents from './pages/admin/Documents';
+import CompanySettings from './pages/admin/CompanySettings';
+import WorkShifts from './pages/admin/WorkShifts';
+import AttendancePolicies from './pages/admin/AttendancePolicies';
+import EmailConfig from './pages/admin/EmailConfig';
+import MarkAttendance from './pages/admin/MarkAttendance';
 
 import EmployeeHome from './pages/employee/Dashboard';
 import FaceAttendance from './pages/employee/FaceAttendance';
@@ -67,10 +79,22 @@ export default function App() {
         <Route path="attendance/today" element={<TodayAttendance />} />
         <Route path="attendance/monthly" element={<MonthlyAttendance />} />
         <Route path="attendance/gallery" element={<AttendanceGallery />} />
+        <Route path="attendance/mark" element={<MarkAttendance />} />
         <Route path="attendance-settings" element={<AttendanceSettings />} />
         <Route path="face-registration" element={<FaceRegistrationList />} />
         <Route path="departments" element={<Departments />} />
         <Route path="leaves" element={<Leaves />} />
+        <Route path="leave-policies" element={<LeavePolicies />} />
+        <Route path="leave-balances" element={<LeaveBalances />} />
+        <Route path="salary-config" element={<SalaryConfig />} />
+        <Route path="payroll" element={<Payroll />} />
+        <Route path="payroll/slips" element={<SalarySlips />} />
+        <Route path="holidays" element={<Holidays />} />
+        <Route path="documents" element={<Documents />} />
+        <Route path="company-details" element={<CompanySettings />} />
+        <Route path="work-shifts" element={<WorkShifts />} />
+        <Route path="attendance-policies" element={<AttendancePolicies />} />
+        <Route path="email-config" element={<EmailConfig />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
       </Route>
